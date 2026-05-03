@@ -6,19 +6,15 @@ chromium.use(stealth);
 const app = express();
 app.use(express.json());
 
-// المرحلة الأولى: التخطيط عبر ChatGPT
+// المرحلة الأولى: التخطيط (ChatGPT) - تبقى كما هي لأنها تعمل جيداً كـ Guest
 async function getArchitectPlan(userPrompt) {
-    const browser = await chromium.launch({ 
-        headless: true, 
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-    });
+    const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
     const page = await browser.newPage();
     try {
-        await page.goto('https://chatgpt.com/', { waitUntil: 'networkidle' });
+        await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
         const inputSelector = '#prompt-textarea';
-        await page.waitForSelector(inputSelector);
-        
-        await page.fill(inputSelector, `Roblox Expert: Create a technical plan for: "${userPrompt}". Focus on parts and logic.`);
+        await page.waitForSelector(inputSelector, { timeout: 30000 });
+        await page.fill(inputSelector, `Roblox Expert: Plan for "${userPrompt}". Technical steps only.`);
         await page.keyboard.press('Enter');
         
         await page.waitForSelector('.markdown', { timeout: 45000 });
@@ -26,62 +22,72 @@ async function getArchitectPlan(userPrompt) {
         await browser.close();
         return plan;
     } catch (e) {
-        console.error("ChatGPT Error:", e.message);
         await browser.close();
-        return "Plan: Create detailed parts for " + userPrompt;
+        return "Plan: Build a detailed Roblox structure for: " + userPrompt;
     }
 }
 
-// المرحلة الثانية: البرمجة عبر Claude
-async function getCoderResponse(plan) {
+// المرحلة الثانية: توليد الكود باستخدام Gemini (بدلاً من Claude)
+async function getGeminiCoderResponse(plan) {
     const browser = await chromium.launch({ 
         headless: true, 
         args: ['--no-sandbox', '--disable-setuid-sandbox'] 
     });
-    const context = await browser.newContext({ storageState: 'claude_auth.json' });
+    const context = await browser.newContext({ storageState: 'gemini_auth.json' });
     const page = await context.newPage();
     
     try {
-        await page.goto('https://claude.ai/chats', { waitUntil: 'networkidle' });
-        const inputSelector = 'div[contenteditable="true"]';
-        await page.waitForSelector(inputSelector);
+        await page.goto('https://gemini.google.com/app', { waitUntil: 'networkidle', timeout: 60000 });
         
-        const masterPrompt = `Based on: "${plan}", generate Roblox JSON actions ONLY. 
-        Format: {"actions": [{"type": "create", "className": "Part", "name": "AI_Part", "properties": {"Color": [0,255,0]}}]}. 
-        No conversational text.`;
+        // Selector الخاص بمربع نص Gemini
+        const inputSelector = 'div[role="textbox"], .textarea, rich-textarea > div';
+        await page.waitForSelector(inputSelector, { timeout: 45000 });
         
+        const masterPrompt = `As a Roblox Developer, convert this plan into a JSON: "${plan}". 
+        Requirement: Return ONLY a JSON object.
+        Format: {"actions": [{"type": "create", "className": "Part", "name": "AI_Part", "properties": {"Material": "Neon", "Size": [10,1,10]}}]}`;
+
         await page.fill(inputSelector, masterPrompt);
         await page.keyboard.press('Enter');
 
-        await page.waitForSelector('pre, code', { timeout: 60000 });
-        const jsonResult = await page.innerText('pre, code');
+        // انتظار رد Gemini (عادة يظهر في وسوم الـ code أو داخل الـ response containers)
+        await page.waitForSelector('.model-response-text, code', { timeout: 60000 });
+        const responseText = await page.innerText('body');
+        
         await browser.close();
-        return jsonResult;
+        return responseText;
     } catch (e) {
-        console.error("Claude Error:", e.message);
+        console.error("Gemini Engine Error:", e.message);
         await browser.close();
         throw e;
     }
 }
 
-// نقطة الاتصال مع روبلوكس
 app.post('/generate', async (req, res) => {
     try {
-        console.log("Receiving Request:", req.body.prompt);
-        const plan = await getArchitectPlan(req.body.prompt);
-        const finalJson = await getCoderResponse(plan);
+        console.log("Starting VexOS Pipeline for:", req.body.prompt);
         
-        // استخراج الـ JSON فقط من رد Claude
-        const cleanJson = finalJson.match(/\{[\s\S]*\}/)[0];
-        res.header("Content-Type", "application/json");
-        res.send(cleanJson);
+        const plan = await getArchitectPlan(req.body.prompt);
+        console.log("Phase 1 Complete.");
+        
+        const rawResponse = await getGeminiCoderResponse(plan);
+        console.log("Phase 2 Complete.");
+        
+        // استخراج الـ JSON من نص Gemini
+        const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            res.header("Content-Type", "application/json");
+            res.send(jsonMatch[0]);
+        } else {
+            throw new Error("Gemini didn't return valid JSON");
+        }
     } catch (error) {
-        console.error("Server Crash:", error.message);
+        console.error("System Error:", error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`VexOS System Active on Port ${PORT}`);
+    console.log(`VexOS Gemini-Engine Online on Port ${PORT}`);
 });
