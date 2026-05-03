@@ -6,64 +6,42 @@ chromium.use(stealth);
 const app = express();
 app.use(express.json());
 
-// المرحلة 1: التخطيط عبر ChatGPT
-async function getArchitectPlan(userPrompt) {
-    const browser = await chromium.launch({ 
-        headless: true, 
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-    });
-    const page = await browser.newPage();
-    try {
-        console.log("Phase 1: Navigating to ChatGPT...");
-        await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-        const inputSelector = '#prompt-textarea';
-        await page.waitForSelector(inputSelector, { timeout: 30000 });
-        
-        await page.fill(inputSelector, `Roblox Expert: Create a technical plan for: "${userPrompt}". Technical steps only.`);
-        await page.keyboard.press('Enter');
-        
-        await page.waitForSelector('.markdown', { timeout: 45000 });
-        const plan = await page.innerText('.markdown');
-        await browser.close();
-        return plan;
-    } catch (e) {
-        console.error("ChatGPT Error:", e.message);
-        await browser.close();
-        return "Plan: Build a high-quality structure for " + userPrompt;
-    }
-}
-
-// المرحلة 2: البرمجة عبر Gemini (مع إصلاحات الـ Timeout والذاكرة)
-async function getGeminiCoderResponse(plan) {
+// وظيفة المحرك الوحيد: Gemini
+async function askGemini(prompt) {
     const browser = await chromium.launch({ 
         headless: true, 
         args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage', // حل مشكلة الذاكرة في الحاويات (Docker)
-            '--disable-gpu'
+            '--disable-dev-shm-usage'
         ] 
     });
+    
+    // استخدام ملف الكوكيز الخاص بـ Gemini
     const context = await browser.newContext({ storageState: 'gemini_auth.json' });
     const page = await context.newPage();
     
     try {
-        console.log("Phase 2: Navigating to Gemini...");
-        // استخدام 'commit' بدلاً من 'networkidle' لتجاوز البطء
+        console.log("Navigating to Gemini Engine...");
+        // استخدام 'commit' لتسريع الدخول وتجاوز الـ Timeout
         await page.goto('https://gemini.google.com/app', { waitUntil: 'commit', timeout: 90000 });
 
         const inputSelector = 'div[role="textbox"], [contenteditable="true"]';
         await page.waitForSelector(inputSelector, { timeout: 60000 });
         
-        const masterPrompt = `As a Roblox Developer, convert this to JSON: "${plan}". Return ONLY JSON. Format: {"actions": [{"type": "create", "className": "Part", "properties": {"Size": [10,1,10]}}]}`;
+        // برومبت مدمج يطلب التخطيط والكود في خطوة واحدة
+        const masterPrompt = `Act as a Roblox Developer. For this request: "${prompt}", generate a technical execution JSON. 
+        Format requirement: Return ONLY a JSON object. 
+        Structure: {"actions": [{"type": "create", "className": "Part", "properties": {"Size": [10,1,10], "Color": [255,0,0]}}]}`;
 
         await page.fill(inputSelector, masterPrompt);
         await page.keyboard.press('Enter');
 
-        // الانتظار حتى استلام الرد
+        // انتظار رد Gemini
+        console.log("Waiting for Gemini response...");
         await page.waitForSelector('message-content', { timeout: 60000 });
-        const responseText = await page.innerText('body');
         
+        const responseText = await page.innerText('body');
         await browser.close();
         return responseText;
     } catch (e) {
@@ -73,30 +51,31 @@ async function getGeminiCoderResponse(plan) {
     }
 }
 
-// نقطة الاتصال مع Roblox
+// نقطة الاستقبال من روبلوكس
 app.post('/generate', async (req, res) => {
     try {
-        console.log("Starting VexOS Pipeline for:", req.body.prompt);
-        const plan = await getArchitectPlan(req.body.prompt);
-        console.log("Phase 1 Complete.");
+        const userPrompt = req.body.prompt;
+        console.log("VexOS Request Received:", userPrompt);
         
-        const rawResponse = await getGeminiCoderResponse(plan);
-        console.log("Phase 2 Complete.");
+        const rawResponse = await askGemini(userPrompt);
         
+        // استخراج الـ JSON من نص الاستجابة
         const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+        
         if (jsonMatch) {
+            console.log("JSON extracted successfully.");
             res.header("Content-Type", "application/json");
             res.send(jsonMatch[0]);
         } else {
-            throw new Error("Invalid AI response format");
+            throw new Error("Gemini failed to output valid JSON format.");
         }
     } catch (error) {
-        console.error("Final Error:", error.message);
+        console.error("System Crash:", error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`VexOS System Online on Port ${PORT}`);
+    console.log(`VexOS Solo-Gemini Engine Online on Port ${PORT}`);
 });
