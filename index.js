@@ -18,12 +18,19 @@ async function askGeminiPro(prompt) {
         await page.goto('https://gemini.google.com/app', { waitUntil: 'commit', timeout: 90000 });
         const inputSelector = 'div[role="textbox"], [contenteditable="true"]';
         await page.waitForSelector(inputSelector, { timeout: 60000 });
-        
-        const masterPrompt = `Roblox Architect Mode: 
-        Task: "${prompt}". 
-        Build a PRO detailed model with 5-15 parts. Use CFrame for precise alignment. 
-        Format: You MUST return ONLY a JSON object. No intro, no backticks, no code blocks. 
-        Example Format: {"actions": [{"type": "create", "className": "Part", "properties": {"CFrame": [0,5,0, 1,0,0,0,1,0,0,0,1], "Size": [1,1,1], "Material": "Metal", "Color": [255,255,255], "Anchored": true}}]}`;
+
+        const masterPrompt = `Act as a Roblox Pro Builder. 
+        Task: "${prompt}".
+
+        CRITICAL INSTRUCTIONS:
+        1. DECONSTRUCTION: You must break this object into at least 8-12 separate parts.
+        2. ANATOMY: If it's a creature, you MUST create: 1 Torso, 4 Legs, 1 Neck, 1 Head, and 1 Tail. 
+        3. COORDINATES: Calculate the CFrame for each part so they actually connect. Do not put them all at 0,0,0.
+        4. VARIETY: Use different sizes for each part. (e.g., Head should be smaller than Torso).
+        5. MATERIALS: Use 'SmoothPlastic' for skin, 'Neon' for eyes, 'Metal' for armor.
+
+        Return ONLY a JSON object. No explanation.
+        Example: {"actions": [{"type": "create", "className": "Part", "name": "Head", "properties": {"CFrame": [0, 10, 5, 1,0,0,0,1,0,0,0,1], "Size": [2, 2, 2]}}, ...]} `;
 
         await page.fill(inputSelector, masterPrompt);
         await page.keyboard.press('Enter');
