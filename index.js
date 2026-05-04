@@ -19,11 +19,11 @@ async function askGeminiPro(prompt) {
         const inputSelector = 'div[role="textbox"], [contenteditable="true"]';
         await page.waitForSelector(inputSelector, { timeout: 60000 });
         
-        const masterPrompt = `Task: "${prompt}". 
-        Build a professional Roblox model with 5-15 parts. 
-        Use CFrame for alignment. 
-        Return ONLY a JSON object. No talking, no explanations. 
-        Format: {"actions": [...]}`;
+        const masterPrompt = `Roblox Architect Mode: 
+        Task: "${prompt}". 
+        Build a PRO detailed model with 5-15 parts. Use CFrame for precise alignment. 
+        Format: You MUST return ONLY a JSON object. No intro, no backticks, no code blocks. 
+        Example Format: {"actions": [{"type": "create", "className": "Part", "properties": {"CFrame": [0,5,0, 1,0,0,0,1,0,0,0,1], "Size": [1,1,1], "Material": "Metal", "Color": [255,255,255], "Anchored": true}}]}`;
 
         await page.fill(inputSelector, masterPrompt);
         await page.keyboard.press('Enter');
@@ -33,32 +33,33 @@ async function askGeminiPro(prompt) {
         await browser.close();
         return responseText;
     } catch (e) {
+        console.error("Browser Error:", e.message);
         await browser.close();
         throw e;
     }
 }
 
-// دالة تنظيف النص لاستخراج الـ JSON فقط
-function extractJSON(text) {
-    const match = text.match(/\{[\s\S]*\}/);
-    return match ? match[0] : null;
-}
-
 app.post('/generate', async (req, res) => {
     try {
-        console.log("VexOS Pro Request:", req.body.prompt);
+        console.log("VexOS Pro Building:", req.body.prompt);
         const rawResponse = await askGeminiPro(req.body.prompt);
-        const cleanJson = extractJSON(rawResponse);
         
-        if (cleanJson) {
+        // استخراج الـ JSON الصافي باستخدام Regex لتجنب خطأ الـ Parse
+        const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+            const cleanJson = jsonMatch[0].trim();
+            // التأكد من صحة الـ JSON قبل الإرسال
+            JSON.parse(cleanJson); 
             res.header("Content-Type", "application/json").send(cleanJson);
         } else {
-            res.status(500).json({ error: "Gemini failed to provide JSON" });
+            throw new Error("No valid JSON found in AI response");
         }
     } catch (error) {
+        console.error("Server Error:", error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => console.log(`VexOS Pro Online`));
+app.listen(PORT, '0.0.0.0', () => console.log(`VexOS Pro Online on ${PORT}`));
